@@ -1,0 +1,19 @@
+<whtml:customtag name="widgets:space" attributes="href">
+  <whtml:watch cond="@href">
+    <script type="text/javascript">
+      document.write(load("@href"));
+    </script>
+  </whtml:watch>
+</whtml>
+
+<whtml:customtag name="widgets:nav" attributes="href,target,class,style">
+  <a href="#" onclick="#@target.href = '@href';" class="@class", style="@style">
+    <whtml:setattr name="href" value="@href" />
+    <whtml:case cond="#@target.href">
+      <whtml:when value="@href">
+        <whtml:appendattr name="class" value=",current_page" />
+      </whtml:when>
+    </whtml:case>
+    <whtml:yield />
+  </a>
+</whtml:customtag>

@@ -1,0 +1,39 @@
+<whtml:customtag name="widgets:space" attributes="href">
+  <span whtml:oncreate="WHTML.loadPart(@href, this);"></span>
+</whtml>
+
+<!--<whtml:customtag name="widgets:nav" attributes="href,target,class,style">
+  <a href="#" onclick="#@target.href = '@href';" class="@class" style="@style">
+    <whtml:setattr name="href" value="@href" />
+    <whtml:case cond="#@target.href">
+      <whtml:when value="@href">
+        <whtml:appendattr name="class" value=",current_page" />
+      </whtml:when>
+    </whtml:case>
+    <whtml:yield />
+  </a>
+</whtml:customtag>
+
+<html>
+  <body>
+    <widgets:nav target="contentSpace" href="content1.whtml">Link 1</widgets:nav><br />
+    <widgets:nav target="contentSpace" href="content2.whtml">Link 2</widgets:nav><br />
+    <widgets:nav target="contentSpace" href="content3.whtml">Link 3</widgets:nav><br />
+    
+    <div class="contentFrame">
+      <widgets:space id="contentSpace" href="content1.whtml" />
+    </div>
+  </body>
+</html>-->
+
+<whtml:customtag name="widgets:test" attributes="value">
+  <i style="color: @value;">Some test? <whtml:yield /></i>
+</whtml:customtag>
+
+This is some text...<br />
+<b>I am bold and <span style="color: red;">red</span>!</b><br />
+<widgets:test id="someLabel" value="green">Yes!</widgets:test> <a href="#" onclick="someLabel.setValue('blue');">Change color</a><br />
+<br />
+<a href="#" onclick="contentSpace.setHref('content2');">Page 2</a><br />
+<br />
+<widgets:space id="contentSpace" href="content1" />
