@@ -34,6 +34,6 @@ This is some text...<br />
 <b>I am bold and <span style="color: red;">red</span>!</b><br />
 <widgets:test id="someLabel" value="green">Yes!</widgets:test> <a href="#" onclick="someLabel.setValue('blue');">Change color</a><br />
 <br />
-<a href="#" onclick="contentSpace.setHref('content2');">Page 2</a><br />
+<a href="#" onclick="contentSpace.setHref('content1');">Page 1</a> <a href="#" onclick="contentSpace.setHref('content2');">Page 2</a> <a href="#" onclick="contentSpace.setHref('content3');">Page 3</a><br />
 <br />
 <widgets:space id="contentSpace" href="content1" />

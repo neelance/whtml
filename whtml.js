@@ -23,7 +23,6 @@ WHTML.Part = function(url) {
   var e = document.createElement("script");
   e.type = "text/javascript";
   e.src = url + ".js";
-  part = this;
   document.getElementsByTagName('head')[0].appendChild(e);
 }
 
@@ -45,6 +44,12 @@ WHTML.Part.prototype = {
   
   dynamicSetAttribute: function(target, name, valueFunc) {
     Element.writeAttribute(target, name, valueFunc());
+  },
+  
+  dynamicCreateElement: function(name, parent, childFunc) {
+    var element = document.createElement(name);
+    childFunc(element);
+    parent.appendChild(element);
   }
 }
 
@@ -60,8 +65,23 @@ WHTML.CustomTagFunctions = {
     }
   },
   
+  dynamicCreateElement: function(name, parent, dependencies, childFunc) {
+    var element = document.createElement(name);
+    childFunc(element);
+    parent.appendChild(element);
+    
+    for(var i = 0; i < dependencies.length; i++) {
+      this.attrChangeListeners[dependencies[i]].push(function() {
+        var newElement = document.createElement(name);
+        childFunc(newElement);
+        parent.replaceChild(newElement, element);
+        element = newElement;
+      });
+    }
+  },
+  
   attributeChanged: function(name) {
-    listeners = this.attrChangeListeners[name];
+    var listeners = this.attrChangeListeners[name];
     for(var i = 0; i < listeners.length; i++) {
       listeners[i]();
     }

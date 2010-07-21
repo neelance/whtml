@@ -1,7 +1,7 @@
 require "whtml"
 
 app = proc do |env|
-  local_path = (env["REQUEST_PATH"] == "/") ? "index.html" : env["REQUEST_PATH"][1..-1]
+  local_path = (env["PATH_INFO"] == "/") ? "index.html" : env["PATH_INFO"][1..-1]
   result = nil
   
   case ::File.extname(local_path)
