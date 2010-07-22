@@ -87,3 +87,30 @@ WHTML.CustomTagFunctions = {
     }
   }
 }
+
+WHTML.Case = function(parent, valueFunc) {
+  this.parent = parent;
+  this.valueFunc = valueFunc;
+}
+WHTML.Case.prototype = {
+  getValue: function() {
+    return this.valueFunc();
+  },
+  
+  when: function(condFunc) {
+    return new WHTML.When(this, condFunc);
+  }
+}
+
+WHTML.When = function(caseElement, condFunc) {
+  this.caseElement = caseElement;
+  this.condFunc = condFunc;
+  this.result = caseElement.getValue() == condFunc();
+}
+WHTML.When.prototype = {
+  appendChild: function(child) {
+    if(this.result) {
+      this.caseElement.parent.appendChild(child);
+    }
+  }
+}

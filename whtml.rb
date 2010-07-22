@@ -47,9 +47,9 @@ module WHTML
         @custom_tags = []
       end
       
-      def new_element_id
+      def new_element_id(prefix)
         @element_counter += 1
-        "element#{@element_counter}"
+        "#{prefix}#{@element_counter}"
       end
       
       def with_parent(new_parent)
@@ -151,24 +151,23 @@ module WHTML
           when "yield"
             context.out.puts "block(#{context.parent});"
           when "case"
+            case_element_id = context.new_element_id "case"
             value = ProcessedStringValue.new node["value"]
-            context.out.write_block "switch(#{value.js_code}) {", "}" do
-              node.children.each do |child|
-                next if child.text?
-                raise if child.name != "when"
-                process_content_node child, context
+            context.out.puts "#{case_element_id} = new WHTML.Case(#{context.parent}, function() { return #{value.js_code}; });"
+            node.children.each do |when_node|
+              next if when_node.text?
+              raise unless when_node.namespace and when_node.namespace.href == "http://whtml.net/whtml" and when_node.name == "when"
+              when_element_id = context.new_element_id "when"
+              cond = ProcessedStringValue.new when_node["cond"]
+              context.out.puts "#{when_element_id} = #{case_element_id}.when(function() { return #{cond.js_code}; });"
+              context.with_parent when_element_id do
+                when_node.children.each do |child|
+                  process_content_node child, context
+                end
               end
-            end
-          when "when"
-            cond = ProcessedStringValue.new node["cond"]
-            context.out.write_block "case #{cond.js_code}:", nil do
-              node.children.each do |child|
-                process_content_node child, context
-              end
-              context.out.puts "break;"
             end
           else
-            puts "unkown tag: #{node.name}"
+            puts "invalid tag: #{node.name}"
           end
         elsif node.namespace and node.namespace.href == "http://whtml.net/widgets"
           context.out.write_block "#{node.attributes["id"] ? "window.#{node.attributes["id"]} = " : ""}new WHTML.customTags['#{node.namespace.prefix}:#{node.name}'](#{context.parent}, {#{node.attribute_nodes.map{ |attr| "'#{attr.name}': '#{attr.value}'" }.join(", ")}}, function(parent) {", "});" do
@@ -183,7 +182,7 @@ module WHTML
           value = ProcessedCodeValue.new node.text
           context.out.write value.js_code
         else
-          element_id = context.new_element_id
+          element_id = context.new_element_id node.name
           attributes = node.attribute_nodes
           
           oncreate_attr = attributes.find { |attr| attr.name == "oncreate" and attr.namespace.href == "http://whtml.net/whtml" }

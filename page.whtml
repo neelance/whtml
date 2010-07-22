@@ -29,18 +29,23 @@
   <i style="color: @value;">Some test? <whtml:yield /></i>
 </whtml:customtag>
 
+<whtml:customtag name="widgets:decision" attributes="value">
+  <whtml:case value="@value">
+    <whtml:when cond="ddd">
+      I am false!<br />
+    </whtml:when>
+    <whtml:when cond="abc">
+      I am true!<br />
+    </whtml:when>
+  </whtml:case>
+</whtml:customtag>
+
 This is some text...<br />
 <b>I am bold and <span style="color: red;">red</span>!</b><br />
 <widgets:test id="someLabel" value="green">Yes!</widgets:test> <a href="#" onclick="someLabel.setValue('blue');">Change color</a><br />
 <br />
-<whtml:case value="abc">
-  <whtml:when cond="ddd">
-    I am false!<br />
-  </whtml:when>
-  <whtml:when cond="abc">
-    I am true!<br />
-  </whtml:when>
-</whtml:case>
+<widgets:decision id="decision" value="abc" />
+<a href="#" onclick="decision.setValue('ddd');">Change truth...</a><br />
 <br />
 <a href="#" onclick="contentSpace.setHref('content1');">Page 1</a> <a href="#" onclick="contentSpace.setHref('content2');">Page 2</a> <a href="#" onclick="contentSpace.setHref('content3');">Page 3</a><br />
 <br />
