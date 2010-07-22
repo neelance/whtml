@@ -115,25 +115,22 @@ module WHTML
       context.custom_tags.each do |node|
         attribute_names = node["attributes"].split(",")
         
-        context.out.write_block "WHTML.customTags['#{node["name"]}'] = function(parent, attributes, block) {", "}" do
-          context.out.puts "this.attrChangeListeners = { #{attribute_names.map{ |n| "'#{n}': []" }.join(', ')} };"
-          context.out.puts "var context = this;"
-          attribute_names.each do |attr_name|
-            context.out.puts "this['attr_#{attr_name}'] = attributes['#{attr_name}'];"
-          end
-          node.children.each do |child|
-            process_content_node child, context
-          end
-        end
-        
-        context.out.write_block "WHTML.customTags['#{node["name"]}'].prototype = {", "}" do
+        context.out.write_block "WHTML.customTags['#{node["name"]}'] = Class.create(WHTML.CustomTag, {", "});" do
           attribute_names.each do |attr_name|
             context.out.puts "get#{attr_name.capitalize}: function() { return this['attr_#{attr_name}']; },"
             context.out.puts "set#{attr_name.capitalize}: function(value) { this['attr_#{attr_name}'] = value; this.attributeChanged('#{attr_name}'); },"
           end
-          context.out.puts "dynamicSetAttribute: WHTML.CustomTagFunctions.dynamicSetAttribute,"
-          context.out.puts "dynamicCreateElement: WHTML.CustomTagFunctions.dynamicCreateElement,"
-          context.out.puts "attributeChanged: WHTML.CustomTagFunctions.attributeChanged"
+          
+          context.out.write_block "initialize: function(parent, attributes, block) {", "}" do
+            context.out.puts "this.attrChangeListeners = { #{attribute_names.map{ |n| "'#{n}': []" }.join(', ')} };"
+            context.out.puts "var context = this;"
+            attribute_names.each do |attr_name|
+              context.out.puts "this['attr_#{attr_name}'] = attributes['#{attr_name}'];"
+            end
+            node.children.each do |child|
+              process_content_node child, context
+            end
+          end
         end
       end
       

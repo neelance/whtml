@@ -16,17 +16,17 @@ var WHTML = {
   }
 };
 
-WHTML.Part = function(url) {
-  this.loaded = false;
-  this.loadCallbacks = [];
-  
-  var e = document.createElement("script");
-  e.type = "text/javascript";
-  e.src = url + ".js";
-  document.getElementsByTagName('head')[0].appendChild(e);
-}
+WHTML.Part = Class.create({
+  initialize: function(url) {
+    this.loaded = false;
+    this.loadCallbacks = [];
+    
+    var e = document.createElement("script");
+    e.type = "text/javascript";
+    e.src = url + ".js";
+    document.getElementsByTagName('head')[0].appendChild(e);
+  },
 
-WHTML.Part.prototype = {
   whenLoaded: function(callback) {
     if(this.loaded) {
       callback();
@@ -51,9 +51,9 @@ WHTML.Part.prototype = {
     childFunc(element);
     parent.appendChild(element);
   }
-}
+});
 
-WHTML.CustomTagFunctions = {
+WHTML.CustomTag = Class.create({
   dynamicSetAttribute: function(target, name, valueFunc, dependencies) {
     var f = function() {
       Element.writeAttribute(target, name, valueFunc());
@@ -86,13 +86,14 @@ WHTML.CustomTagFunctions = {
       listeners[i]();
     }
   }
-}
+});
 
-WHTML.Case = function(parent, valueFunc) {
-  this.parent = parent;
-  this.valueFunc = valueFunc;
-}
-WHTML.Case.prototype = {
+WHTML.Case = Class.create({
+  initialize: function(parent, valueFunc) {
+    this.parent = parent;
+    this.valueFunc = valueFunc;
+  },
+  
   getValue: function() {
     return this.valueFunc();
   },
@@ -100,17 +101,18 @@ WHTML.Case.prototype = {
   when: function(condFunc) {
     return new WHTML.When(this, condFunc);
   }
-}
+});
 
-WHTML.When = function(caseElement, condFunc) {
-  this.caseElement = caseElement;
-  this.condFunc = condFunc;
-  this.result = caseElement.getValue() == condFunc();
-}
-WHTML.When.prototype = {
+WHTML.When = Class.create({
+  initialize: function(caseElement, condFunc) {
+    this.caseElement = caseElement;
+    this.condFunc = condFunc;
+    this.result = caseElement.getValue() == condFunc();
+  },
+  
   appendChild: function(child) {
     if(this.result) {
       this.caseElement.parent.appendChild(child);
     }
   }
-}
+});
