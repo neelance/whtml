@@ -25,11 +25,11 @@ module WHTML
       end
       
       def write_block(header, footer)
-        self.puts header
+        self.puts header if header
         self.indent do
           yield
         end
-        self.puts footer
+        self.puts footer if footer
       end
       
       def string
@@ -150,6 +150,23 @@ module WHTML
             context.custom_tags << node
           when "yield"
             context.out.puts "block(#{context.parent});"
+          when "case"
+            value = ProcessedStringValue.new node["value"]
+            context.out.write_block "switch(#{value.js_code}) {", "}" do
+              node.children.each do |child|
+                next if child.text?
+                raise if child.name != "when"
+                process_content_node child, context
+              end
+            end
+          when "when"
+            cond = ProcessedStringValue.new node["cond"]
+            context.out.write_block "case #{cond.js_code}:", nil do
+              node.children.each do |child|
+                process_content_node child, context
+              end
+              context.out.puts "break;"
+            end
           else
             puts "unkown tag: #{node.name}"
           end
