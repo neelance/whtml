@@ -77,7 +77,7 @@ module WHTML
       end
       
       def dependency_array
-        "[#{@dependencies.map{ |d| "'#{d}'" }.join ', '}]"
+        "[#{@dependencies.map{ |d| "context.attrDependencies['#{d}']" }.join ', '}]"
       end
     end
     
@@ -122,7 +122,7 @@ module WHTML
           end
           
           context.out.write_block "initialize: function(parent, attributes, block) {", "}" do
-            context.out.puts "this.attrChangeListeners = { #{attribute_names.map{ |n| "'#{n}': []" }.join(', ')} };"
+            context.out.puts "this.attrDependencies = { #{attribute_names.map{ |n| "'#{n}': new WHTML.Dependency()" }.join(', ')} };"
             context.out.puts "var context = this;"
             attribute_names.each do |attr_name|
               context.out.puts "this['attr_#{attr_name}'] = attributes['#{attr_name}'];"
@@ -150,18 +150,23 @@ module WHTML
           when "case"
             case_element_id = context.new_element_id "case"
             value = ProcessedStringValue.new node["value"]
-            context.out.puts "#{case_element_id} = new WHTML.Case(#{context.parent}, function() { return #{value.js_code}; });"
+            context.out.puts "#{case_element_id} = new WHTML.Case(#{context.parent}, function() { return #{value.js_code}; }, function() { return #{value.dependency_array}; });"
+            whens = []
+            dependencies = []
             node.children.each do |when_node|
               next if when_node.text?
               raise unless when_node.namespace and when_node.namespace.href == "http://whtml.net/whtml" and when_node.name == "when"
-              when_element_id = context.new_element_id "when"
               cond = ProcessedStringValue.new when_node["cond"]
-              context.out.puts "#{when_element_id} = #{case_element_id}.when(function() { return #{cond.js_code}; });"
-              context.with_parent when_element_id do
-                when_node.children.each do |child|
-                  process_content_node child, context
+              whens << [when_node, cond] 
+            end
+            whens.each do |when_node, cond|
+              context.out.write_block "#{case_element_id}.when(function(value) { return value == (#{cond.js_code}); }, function(parent) {" , "});" do
+                context.with_parent "parent" do
+                  when_node.children.each do |child|
+                    process_content_node child, context
+                  end
                 end
-              end
+              end 
             end
           else
             puts "invalid tag: #{node.name}"
@@ -197,7 +202,7 @@ module WHTML
                 context.out.puts "Event.observe(#{element_id}, '#{attr.name[2..-1]}', function() { #{value.js_code} })"
               else
                 value = ProcessedStringValue.new attr.value
-                context.out.puts "this.dynamicSetAttribute(#{element_id}, '#{attr.name}', function() { return #{value.js_code}; }, #{value.dependency_array});"
+                context.out.puts "WHTML.dynamicAttributeFor(#{element_id}, '#{attr.name}').set(function() { return #{value.js_code}; }, function() { return #{value.dependency_array}; });"
               end
             end
           end
@@ -207,7 +212,7 @@ module WHTML
             element_creation.call
             context.out.puts "#{context.parent}.appendChild(#{element_id});"
           else
-            context.out.write_block "this.dynamicCreateElement('#{node.name}', #{context.parent}, #{oncreate_value.dependency_array}, function(#{element_id}) {", "});" do
+            context.out.write_block "new WHTML.DynamicElement('#{node.name}', #{context.parent}, function() { return #{oncreate_value.dependency_array}; }, function(#{element_id}) {", "});" do
               element_creation.call
             end
           end
