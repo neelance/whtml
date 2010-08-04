@@ -1,6 +1,6 @@
 <whtml:customtag name="widgets:space" attributes="href">
   <span whtml:oncreate="WHTML.loadPart(@href, this);"></span>
-</whtml>
+</whtml:customtag>
 
 <!--<whtml:customtag name="widgets:nav" attributes="href,target,class,style">
   <a href="#" onclick="#@target.href = '@href';" class="@class" style="@style">
@@ -29,15 +29,23 @@
   <i style="color: @value;">Some test? <whtml:yield /></i>
 </whtml:customtag>
 
+<whtml:customtag name="whtml:setattr" attributes="name,value" type="text/javascript">
+  currentElement.writeAttribute(@name, @value);
+</whtml:customtag>
+
 <whtml:customtag name="widgets:decision" attributes="value">
-  <whtml:case value="@value">
-    <whtml:when cond="ddd">
-      I am false!<br />
-    </whtml:when>
-    <whtml:when cond="abc">
-      I am true!<br />
-    </whtml:when>
-  </whtml:case>
+  <span>
+    <whtml:case value="@value">
+      <whtml:when cond="ddd">
+        <whtml:setattr name="style" value="color: red;" />
+        I am false!<br />
+      </whtml:when>
+      <whtml:when cond="abc">
+        <whtml:setattr name="style" value="color: green;" />
+        I am true!<br />
+      </whtml:when>
+    </whtml:case>
+  </span>
 </whtml:customtag>
 
 This is some text...<br />

@@ -8,37 +8,43 @@ var WHTML = {
   
   loadPart: function(url, parent) {
     if(!WHTML.parts[url]) {
-      WHTML.parts[url] = new WHTML.Part(url);
+      new WHTML.Part(url);
     }
     WHTML.parts[url].whenLoaded(function() {
-      WHTML.parts[url].create(parent);
+      this.create(parent);
     });
   },
   
   dynamicAttributeFor: function(target, name) {
-    var attr = Element.retrieve(target, "dynamicAttribute_" + name);
+    var attr = target.retrieve("dynamicAttribute_" + name);
     if(!attr) {
       attr = new WHTML.DynamicAttribute(target, name);
-      Element.store(target, "dynamicAttribute_" + name, attr);
+      target.store("dynamicAttribute_" + name, attr);
     }
     return attr;
   }
 };
 
+WHTML.Branch = Class.create({
+});
+
 WHTML.Part = Class.create({
   initialize: function(url) {
+    this.url = url;
     this.loaded = false;
     this.loadCallbacks = [];
     
+    WHTML.parts[url] = this;
+
     var e = document.createElement("script");
     e.type = "text/javascript";
-    e.src = url + ".js";
+    e.src = this.url + ".js";
     document.getElementsByTagName('head')[0].appendChild(e);
   },
 
   whenLoaded: function(callback) {
     if(this.loaded) {
-      callback();
+      callback.call(this);
     } else {
       this.loadCallbacks.push(callback);
     }
@@ -46,7 +52,7 @@ WHTML.Part = Class.create({
   
   scriptLoaded: function() {
     this.loaded = true;
-    this.loadCallbacks.invoke('call');
+    this.loadCallbacks.invoke('call', this);
   }
 });
 
@@ -78,7 +84,7 @@ WHTML.DynamicAttribute = Class.create(WHTML.Dynamic, {
   },
   
   update: function() {
-    Element.writeAttribute(this.target, this.name, this.valueFunc());
+    this.target.writeAttribute(this.name, this.valueFunc());
     this.updateDependencies();
   }
 });
@@ -132,7 +138,6 @@ WHTML.CustomTag = Class.create({
 WHTML.Case = Class.create(WHTML.Dynamic, {
   initialize: function($super, parent, valueFunc, valueDepFunc) {
     $super();
-    this.parent = parent;
     this.valueFunc = valueFunc;
     this.valueDepFunc = valueDepFunc;
     this.depFunc = function() {
@@ -140,6 +145,8 @@ WHTML.Case = Class.create(WHTML.Dynamic, {
     };
     this.whenElements = [];
     this.currentWhen = null;
+    this.positionNode = document.createTextNode('');
+    parent.appendChild(this.positionNode);
   },
   
   getValue: function() {
@@ -156,10 +163,9 @@ WHTML.Case = Class.create(WHTML.Dynamic, {
     this.whenElements.each(function(whenElement) {
       if(whenElement.condFunc(value)) {
         if(whenElement == this.currentWhen) return;
-        
-        whenElement.addChildrenTo(this.parent, this.currentWhen && this.currentWhen.children[0]);
-        if(this.currentWhen) this.currentWhen.removeChildren(this.parent);
+        if(this.currentWhen) this.currentWhen.revert(this.positionNode);
         this.currentWhen = whenElement;
+        this.currentWhen.apply(this.positionNode);
         return;
       }
     }, this);
@@ -168,37 +174,63 @@ WHTML.Case = Class.create(WHTML.Dynamic, {
 });
 
 WHTML.When = Class.create({
-  initialize: function(condFunc, childFunc) {
+  initialize: function(condFunc, actionFunc) {
     this.condFunc = condFunc;
-    this.childFunc = childFunc;
-    this.children = null;
+    this.actionFunc = actionFunc;
+    this.actions = null;
   },
   
-  addChildrenTo: function(parent, position) {
-    this.getChildren().each(function(child) {
-      if(position) {
-        parent.insertBefore(child, position);
-      } else {
-        parent.appendChild(child);
-      }
-    });
+  apply: function(positionNode) {
+    this.getActions().invoke('apply', positionNode);
   },
   
-  removeChildren: function(parent) {
-    this.getChildren().each(function(child) {
-      parent.removeChild(child);
-    });
+  revert: function(positionNode) {
+    this.getActions().invoke('revert', positionNode);
   },
   
-  getChildren: function() {
-    if(this.children == null) {
-      this.children = [];
-      this.childFunc(this);
+  getActions: function() {
+    if(this.actions == null) {
+      this.actions = [];
+      this.actionFunc(this);
     }
-    return this.children;
+    return this.actions;
   },
   
   appendChild: function(child) {
-    this.children.push(child);
+    this.actions.push(new WHTML.AppendChildAction(child));
+  },
+  
+  writeAttribute: function(name, value) {
+    this.actions.push(new WHTML.WriteAttributeAction(name, value));
+  }
+});
+
+WHTML.AppendChildAction = Class.create({
+  initialize: function(child) {
+    this.child = child;
+  },
+  
+  apply: function(positionNode) {
+    positionNode.parentNode.insertBefore(this.child, positionNode);
+  },
+  
+  revert: function(positionNode) {
+    positionNode.parentNode.removeChild(this.child);
+  }
+});
+
+WHTML.WriteAttributeAction = Class.create({
+  initialize: function(name, value) {
+    this.name = name;
+    this.value = value;
+  },
+  
+  apply: function(positionNode) {
+    this.oldValue = positionNode.parentNode.readAttribute(this.name);
+    positionNode.parentNode.writeAttribute(this.name, this.value);
+  },
+  
+  revert: function(positionNode) {
+    positionNode.parentNode.writeAttribute(this.name, this.oldValue);
   }
 });
