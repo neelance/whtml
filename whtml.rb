@@ -1,7 +1,7 @@
 require "nokogiri"
 
 module WHTML
-  module Processor
+  class Processor
     class IndentingOutput
       def initialize(io)
         @io = io
@@ -37,29 +37,6 @@ module WHTML
       end
     end
     
-    class Context
-      attr_reader :out, :parent, :custom_tags
-      
-      def initialize
-        @out = IndentingOutput.new StringIO.new
-        @element_counter = 0
-        @parent = "parent"
-        @custom_tags = {}
-      end
-      
-      def new_element_id(prefix)
-        @element_counter += 1
-        "#{prefix}#{@element_counter}"
-      end
-      
-      def with_parent(new_parent)
-        old_parent = @parent
-        @parent = new_parent
-        yield
-        @parent = old_parent
-      end
-    end
-    
     class ProcessedValue
       attr_reader :js_code, :dependencies
       
@@ -70,7 +47,7 @@ module WHTML
         loop do
           s.scan /(.*?)@([\w]+)/m or break
           parts << process_text_part(s[1]) unless s[1].empty?
-          parts << "context['attr_#{s[2]}']"
+          parts << "context['attr_#{s[2]}'].getValue()"
           @dependencies << s[2]
         end
         parts << process_text_part(s.rest) unless s.rest.empty?
@@ -78,7 +55,7 @@ module WHTML
       end
       
       def dependency_array
-        "[#{@dependencies.map{ |d| "context.attrDependencies['#{d}']" }.join ', '}]"
+        "[#{@dependencies.map{ |d| "context.attributeDependencyFor('#{d}')" }.join ', '}]"
       end
     end
     
@@ -89,6 +66,14 @@ module WHTML
       
       def process_text_part(part)
         "'#{Processor.escape_js_string part}'"
+      end
+      
+      def to_dynamic_value
+        if dependency_array.empty?
+          "new WHTML.SimpleValue(#{js_code})"
+        else
+          "new WHTML.DynamicValue(function() { return #{js_code}; }, #{dependency_array})"
+        end
       end
     end
     
@@ -102,140 +87,133 @@ module WHTML
       end
     end
     
-    def self.parse(source, part_name)
-      doc = Nokogiri::XML.parse("<?xml version=\"1.0\"?><root xmlns:whtml=\"http://whtml.net/whtml\" xmlns:widgets=\"http://whtml.net/widgets\">#{source}</root>")
-      context = Context.new
-      
-      context.out.write_block "WHTML.parts['#{part_name}'].create = function(parent) {", "}" do
-        context.out.puts "var context = this;"
-        doc.root.children.each do |child|
-          process_content_node child, context
-        end
-      end
-      
-      context.custom_tags.each do |name, node|
-        attribute_names = node["attributes"].split(",")
-        
-        context.out.write_block "WHTML.customTags['#{node["name"]}'] = Class.create(WHTML.CustomTag, {", "});" do
-          attribute_names.each do |attr_name|
-            context.out.puts "get#{attr_name.capitalize}: function() { return this['attr_#{attr_name}']; },"
-            context.out.puts "set#{attr_name.capitalize}: function(value) { this['attr_#{attr_name}'] = value; this.attributeChanged('#{attr_name}'); },"
-          end
-          
-          context.out.write_block "initialize: function(parent, attributes, block) {", "}" do
-            context.out.puts "this.attrDependencies = { #{attribute_names.map{ |n| "'#{n}': new WHTML.Dependency()" }.join(', ')} };"
-            context.out.puts "var context = this;"
-            attribute_names.each do |attr_name|
-              context.out.puts "this['attr_#{attr_name}'] = attributes['#{attr_name}'];"
-            end
-            if node["type"] == "text/javascript"
-              context.out.puts "currentElement = #{context.parent};"
-              value = ProcessedCodeValue.new node.text
-              context.out.write value.js_code
-            else
-              node.children.each do |child|
-                process_content_node child, context
-              end
-            end
-          end
-        end
-      end
-      
-      context.out.puts "WHTML.parts['#{part_name}'].scriptLoaded();"
-      context.out.string
+    def initialize
+      @element_counter = 0
+      @out = IndentingOutput.new StringIO.new
+      @custom_tags = {}
     end
     
-    def self.process_content_node(node, context)
-      case node
-      when Nokogiri::XML::Element
-        if node.namespace and context.custom_tags["#{node.namespace.prefix}:#{node.name}"]
-          context.out.write_block "#{node.attributes["id"] ? "window.#{node.attributes["id"]} = " : ""}new WHTML.customTags['#{node.namespace.prefix}:#{node.name}'](#{context.parent}, {#{node.attribute_nodes.map{ |attr| "'#{attr.name}': '#{attr.value}'" }.join(", ")}}, function(parent) {", "});" do
-            context.with_parent "parent" do
+    def new_element_id(prefix)
+      @element_counter += 1
+      "#{prefix}#{@element_counter}"
+    end
+    
+    def parse(source, part_name)
+      doc = Nokogiri::XML.parse("<?xml version=\"1.0\"?><root xmlns:whtml=\"http://whtml.net/whtml\" xmlns:widgets=\"http://whtml.net/widgets\">#{source}</root>")
+      
+      parent_id = new_element_id "parent"
+      @out.write_block "WHTML.parts['#{part_name}'].create = function(#{parent_id}) {", "}" do
+        @out.puts "var context = this;"
+        doc.root.children.each do |child|
+          process_content_node child, parent_id
+        end
+      end
+      
+      @custom_tags.each do |name, node|
+        attribute_names = (node["attributes"] || "").split(",")
+        
+        @out.write_block "WHTML.customTags['#{node["name"]}'] = Class.create(WHTML.CustomTag, {", "});" do
+          attribute_names.each do |attr_name|
+            @out.puts "get#{attr_name.capitalize}: function() { return this['attr_#{attr_name}'].getValue(); },"
+            @out.puts "set#{attr_name.capitalize}: function(value) { this['attr_#{attr_name}'] = new WHTML.SimpleValue(value); this.attributeChanged('#{attr_name}'); },"
+          end
+
+          parent_id = new_element_id "parent"
+          @out.write_block "appendTo: function(#{parent_id}) {", "}" do
+            @out.puts "var context = this;"
+            if node["type"] == "text/javascript"
+              @out.puts "var parent = #{parent_id};"
+              value = ProcessedCodeValue.new node.text
+              @out.write value.js_code
+            else
               node.children.each do |child|
-                process_content_node child, context
+                process_content_node child, parent_id
               end
             end
           end
-        elsif node.namespace and node.namespace.href == "http://whtml.net/whtml"
+        end
+      end
+      
+      @out.puts "WHTML.parts['#{part_name}'].scriptLoaded();"
+      @out.string
+    end
+    
+    def process_content_node(node, parent)
+      case node
+      when Nokogiri::XML::Element
+        if node.namespace and node.namespace.href == "http://whtml.net/whtml" and not @custom_tags["#{node.namespace.prefix}:#{node.name}"]
           case node.name
           when "customtag"
-            context.custom_tags[node["name"]] = node
+            @custom_tags[node["name"]] = node
           when "yield"
-            context.out.puts "block(#{context.parent});"
-          when "case"
-            case_element_id = context.new_element_id "case"
-            value = ProcessedStringValue.new node["value"]
-            context.out.puts "#{case_element_id} = new WHTML.Case(#{context.parent}, function() { return #{value.js_code}; }, function() { return #{value.dependency_array}; });"
-            whens = []
-            dependencies = []
-            node.children.each do |when_node|
-              next if when_node.text?
-              raise unless when_node.namespace and when_node.namespace.href == "http://whtml.net/whtml" and when_node.name == "when"
-              cond = ProcessedStringValue.new when_node["cond"]
-              whens << [when_node, cond] 
-            end
-            whens.each do |when_node, cond|
-              context.out.write_block "#{case_element_id}.when(function(value) { return value == (#{cond.js_code}); }, function(parent) {" , "});" do
-                context.with_parent "parent" do
-                  when_node.children.each do |child|
-                    process_content_node child, context
-                  end
-                end
-              end 
+            @out.puts "#{parent}.yield(context);"
+          when "region"
+            parent_id = new_element_id "parent"
+            @out.puts "var #{parent_id} = #{node['parent']};"
+            node.children.each do |child|
+              process_content_node child, parent_id
             end
           else
             puts "invalid tag: #{node.name}"
           end
         elsif node.name == "script" and (node["type"].nil? or node["type"] == "text/javascript")
-          context.out.puts "currentElement = #{context.parent};"
+          @out.puts "var parent = #{parent};"
           value = ProcessedCodeValue.new node.text
-          context.out.write value.js_code
+          @out.write value.js_code
         else
-          element_id = context.new_element_id node.name
+          if node.attributes["id"]
+            element_id = "window.#{node.attributes["id"]}"
+          else
+            element_id = new_element_id node.name
+            @out.puts "var #{element_id};"
+          end
+
           attributes = node.attribute_nodes
-          
           oncreate_attr = attributes.find { |attr| attr.name == "oncreate" and attr.namespace.href == "http://whtml.net/whtml" }
           oncreate_value = oncreate_attr && ProcessedCodeValue.new(oncreate_attr.value)
           
           element_creation = lambda do
             if oncreate_attr
               attributes.delete oncreate_attr
-              context.out.write "(function() { #{oncreate_value.js_code} }).call(#{element_id});"
+              @out.write "(function() { #{oncreate_value.js_code} }).call(#{element_id});"
             end
             
             attributes.each do |attr|
               if attr.name =~ /^on/
                 value = ProcessedCodeValue.new attr.value
-                context.out.puts "Event.observe(#{element_id}, '#{attr.name[2..-1]}', function() { #{value.js_code} })"
+                @out.puts "Event.observe(#{element_id}, '#{attr.name[2..-1]}', function() { #{value.js_code} })"
               else
                 value = ProcessedStringValue.new attr.value
                 if value.dependencies.empty?
-                  context.out.puts "#{element_id}.writeAttribute('#{attr.name}', #{value.js_code});"
+                  @out.puts "#{element_id}.writeAttribute('#{attr.name}', #{value.js_code});"
                 else
-                  context.out.puts "WHTML.dynamicAttributeFor(#{element_id}, '#{attr.name}').set(function() { return #{value.js_code}; }, function() { return #{value.dependency_array}; });"
+                  @out.puts "WHTML.dynamicAttributeFor(#{element_id}, '#{attr.name}').set(#{value.to_dynamic_value});"
                 end
               end
             end
           end
           
           if oncreate_attr.nil? or oncreate_value.dependencies.empty?
-            context.out.puts "#{element_id} = $(document.createElement('#{node.name}'));"
+            @out.puts "#{element_id} = WHTML.createElement('#{node.namespace ? "#{node.namespace.prefix}:#{node.name}" : node.name}');"
             element_creation.call
-            context.out.puts "#{context.parent}.appendChild(#{element_id});"
           else
-            context.out.write_block "new WHTML.DynamicElement('#{node.name}', #{context.parent}, function() { return #{oncreate_value.dependency_array}; }, function(#{element_id}) {", "});" do
+            @out.write_block "#{element_id} = new WHTML.DynamicElement('#{node.name}', function() { return #{oncreate_value.dependency_array}; }, function(#{element_id}) {", "});" do
               element_creation.call
             end
           end
-          
-          context.with_parent element_id do
-            node.children.each do |child|
-              process_content_node child, context
+
+          unless node.children.empty?
+            @out.write_block "#{element_id}.setChildFunction(function() {", "});" do
+              node.children.each do |child|
+                process_content_node child, element_id
+              end
             end
           end
+          
+          @out.puts "#{element_id}.appendTo(#{parent});"
         end
       when Nokogiri::XML::Text
-        context.out.puts "#{context.parent}.appendChild(document.createTextNode('#{escape_js_string node.text}'));"
+        @out.puts "#{parent}.appendChild(document.createTextNode('#{Processor.escape_js_string node.text}'));"
       when Nokogiri::XML::Comment
         # ignore
       else

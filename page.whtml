@@ -30,8 +30,27 @@
 </whtml:customtag>
 
 <whtml:customtag name="whtml:setattr" attributes="name,value" type="text/javascript">
-  currentElement.writeAttribute(@name, @value);
+  parent.writeAttribute(@name, @value);
 </whtml:customtag>
+
+<whtml:customtag name="whtml:case" attributes="value">
+  <script type="text/javascript">
+    context.caseElement = new WHTML.Case(parent, new WHTML.DynamicValue(function() { return @value; }, [context.attributeDependencyFor('value')]));
+  </script>
+  <whtml:yield />
+</whtml>
+
+<whtml:customtag name="whtml:when" attributes="cond">
+  <script type="text/javascript">
+    parent.caseElement.when(function(value) { return value == @cond; }, function(whenElement) {
+  </script>
+  <whtml:region parent="whenElement">
+    <whtml:yield />
+  </whtml:region>
+  <script type="text/javascript">
+    });
+  </script>
+</whtml>
 
 <whtml:customtag name="widgets:decision" attributes="value">
   <span>

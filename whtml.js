@@ -1,3 +1,19 @@
+Element.addMethods({
+  appendTo: function(element, parent) {
+    parent.appendChild(element);
+  },
+  
+  setChildFunction: function(element, childFunction) {
+    childFunction();
+  },
+  
+  yield: function(element, context) {
+    var positionNode = document.createTextNode('');
+    element.appendChild(positionNode);
+    context.apply(positionNode);
+  }
+});
+
 var WHTML = {
   parts: {},
   customTags: {},
@@ -15,6 +31,14 @@ var WHTML = {
     });
   },
   
+  createElement: function(name) {
+    if(WHTML.customTags[name]) {
+      return new WHTML.customTags[name]();
+    } else {
+      return document.createElement(name);
+    }
+  },
+  
   dynamicAttributeFor: function(target, name) {
     var attr = target.retrieve("dynamicAttribute_" + name);
     if(!attr) {
@@ -24,9 +48,6 @@ var WHTML = {
     return attr;
   }
 };
-
-WHTML.Branch = Class.create({
-});
 
 WHTML.Part = Class.create({
   initialize: function(url) {
@@ -56,10 +77,42 @@ WHTML.Part = Class.create({
   }
 });
 
+WHTML.SimpleValue = Class.create({
+  initialize: function(value) {
+    this.value = value;
+  },
+  
+  getValue: function() {
+    return this.value;
+  },
+
+  addListener: function(listener) {},
+  removeListener: function(listener) {},
+});
+
+WHTML.DynamicValue = Class.create({
+  initialize: function(valueFunc, dependencies) {
+    this.valueFunc = valueFunc;
+    this.dependencies = dependencies;
+  },
+  
+  getValue: function() {
+    return this.valueFunc();
+  },
+  
+  addListener: function(listener) {
+    this.dependencies.invoke('addListener', listener);
+  },
+  
+  removeListener: function(listener) {
+    this.dependencies.invoke('removeListener', listener);
+  }
+});
+
 WHTML.Dynamic = Class.create({
   initialize: function() {
     this.currentDependencies = [];
-    this.depFunc = null;
+    this.depFunc = function() { return [this.dynValue]; };
   },
   
   updateDependencies: function() {
@@ -77,29 +130,35 @@ WHTML.DynamicAttribute = Class.create(WHTML.Dynamic, {
     this.valueFunc = null;
   },
   
-  set: function(valueFunc, depFunc) {
-    this.valueFunc = valueFunc;
-    this.depFunc = depFunc;
+  set: function(dynValue) {
+    this.dynValue = dynValue;
+    this.updateDependencies();
     this.update();
   },
   
   update: function() {
-    this.target.writeAttribute(this.name, this.valueFunc());
-    this.updateDependencies();
+    this.target.writeAttribute(this.name, this.dynValue.getValue());
   }
 });
 
 WHTML.DynamicElement = Class.create(WHTML.Dynamic, {
-  initialize: function($super, name, parent, depFunc, childFunc) {
+  initialize: function($super, name, depFunc, childFunc) {
     $super();
     this.name = name;
-    this.parent = parent;
     this.depFunc = depFunc;
     this.childFunc = childFunc;
-    this.currentElement = document.createElement(name);
+    this.updateDependencies();
+  },
+  
+  setChildFunction: function(childFunction) {
+    //this.childFunc = childFunction;
+  },
+  
+  appendTo: function(parent) {
+    this.parent = parent;
+    this.currentElement = document.createElement(this.name);
     this.childFunc(this.currentElement);
     this.parent.appendChild(this.currentElement);
-    this.updateDependencies();
   },
   
   update: function() {
@@ -107,7 +166,6 @@ WHTML.DynamicElement = Class.create(WHTML.Dynamic, {
     this.childFunc(newElement);
     this.parent.replaceChild(newElement, this.currentElement);
     this.currentElement = newElement;
-    this.updateDependencies();
   }
 });
 
@@ -124,60 +182,16 @@ WHTML.Dependency = Class.create({
     this.listeners = this.listeners.without(listener);
   },
   
-  invokeListeners: function() {
+  update: function() {
     this.listeners.invoke('update');
   }
 });
 
-WHTML.CustomTag = Class.create({
-  attributeChanged: function(name) {
-    this.attrDependencies[name].invokeListeners();
-  }
-});
-
-WHTML.Case = Class.create(WHTML.Dynamic, {
-  initialize: function($super, parent, valueFunc, valueDepFunc) {
-    $super();
-    this.valueFunc = valueFunc;
-    this.valueDepFunc = valueDepFunc;
-    this.depFunc = function() {
-      return this.valueDepFunc();
-    };
-    this.whenElements = [];
-    this.currentWhen = null;
-    this.positionNode = document.createTextNode('');
-    parent.appendChild(this.positionNode);
-  },
-  
-  getValue: function() {
-    return this.valueFunc();
-  },
-  
-  when: function(condFunc, childFunc) {
-    this.whenElements.push(new WHTML.When(condFunc, childFunc));
-    this.update();
-  },
-  
-  update: function() {
-    var value = this.valueFunc();
-    this.whenElements.each(function(whenElement) {
-      if(whenElement.condFunc(value)) {
-        if(whenElement == this.currentWhen) return;
-        if(this.currentWhen) this.currentWhen.revert(this.positionNode);
-        this.currentWhen = whenElement;
-        this.currentWhen.apply(this.positionNode);
-        return;
-      }
-    }, this);
-    this.updateDependencies();
-  }
-});
-
-WHTML.When = Class.create({
-  initialize: function(condFunc, actionFunc) {
-    this.condFunc = condFunc;
-    this.actionFunc = actionFunc;
+WHTML.Container = Class.create({
+  initialize: function() {
+    this.actionFunc = function() {};
     this.actions = null;
+    this.isContainer = true;
   },
   
   apply: function(positionNode) {
@@ -202,7 +216,89 @@ WHTML.When = Class.create({
   
   writeAttribute: function(name, value) {
     this.actions.push(new WHTML.WriteAttributeAction(name, value));
+  },
+  
+  yield: function(context) {
+    this.actions.push(new WHTML.YieldAction(context));
   }
+});
+
+WHTML.CustomTag = Class.create(WHTML.Container, {
+  initialize: function($super) {
+    $super();
+    this.attrDependencies = {};
+  },
+  
+  writeAttribute: function(name, value) {
+    this['attr_' + name] = new WHTML.SimpleValue(value);
+    this.attributeChanged(name);
+  },
+  
+  setChildFunction: function(childFunction) {
+    this.actionFunc = childFunction;
+  },
+  
+  store: function(name, value) {
+    this[name] = value;
+  },
+  
+  retrieve: function(name) {
+    return this[name];
+  },
+  
+  attributeDependencyFor: function(name) {
+    if(!this.attrDependencies[name]) {
+      this.attrDependencies[name] = new WHTML.Dependency([]);
+    }
+    return this.attrDependencies[name];
+  },
+  
+  attributeChanged: function(name) {
+    if(this.attrDependencies[name]) {
+      this.attrDependencies[name].update();
+    }
+  }
+});
+
+WHTML.Case = Class.create(WHTML.Dynamic, {
+  initialize: function($super, parent, dynValue) {
+    $super();
+    this.dynValue = dynValue;
+    this.whenElements = [];
+    this.currentWhen = null;
+    this.positionNode = document.createTextNode('');
+    parent.appendChild(this.positionNode);
+  },
+  
+  when: function(condFunc, childFunc) {
+    this.whenElements.push(new WHTML.When(condFunc, childFunc));
+    this.updateDependencies();
+    this.update();
+  },
+  
+  update: function() {
+    var value = this.dynValue.getValue();
+    this.whenElements.each(function(whenElement) {
+      if(whenElement.condFunc(value)) {
+        if(whenElement == this.currentWhen) return;
+        if(this.currentWhen) this.currentWhen.revert(this.positionNode);
+        this.currentWhen = whenElement;
+        this.currentWhen.apply(this.positionNode);
+        return;
+      }
+    }, this);
+  },
+  
+  appendChild: function(child) {
+  }
+});
+
+WHTML.When = Class.create(WHTML.Container, {
+  initialize: function($super, condFunc, actionFunc) {
+    $super();
+    this.condFunc = condFunc;
+    this.actionFunc = actionFunc;
+  },
 });
 
 WHTML.AppendChildAction = Class.create({
@@ -232,5 +328,19 @@ WHTML.WriteAttributeAction = Class.create({
   
   revert: function(positionNode) {
     positionNode.parentNode.writeAttribute(this.name, this.oldValue);
+  }
+});
+
+WHTML.YieldAction = Class.create({
+  initialize: function(context) {
+    this.context = context;
+  },
+  
+  apply: function(positionNode) {
+    this.context.apply(positionNode);
+  },
+  
+  revert: function(positionNode) {
+    this.context.revert(positionNode);
   }
 });

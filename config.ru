@@ -11,7 +11,7 @@ app = proc do |env|
   when ".js"
     whtml_path = "#{local_path[0..-4]}.whtml"
     if ::File.file? whtml_path
-      result = [200, {"Content-Type" => "text/javascript"}, [WHTML::Processor.parse(IO.read(whtml_path), local_path[0..-4])]]
+      result = [200, {"Content-Type" => "text/javascript"}, [WHTML::Processor.new.parse(IO.read(whtml_path), local_path[0..-4])]]
     elsif ::File.file? local_path
       result = [200, {"Content-Type" => "text/javascript"}, [IO.read(local_path)]]
     end
